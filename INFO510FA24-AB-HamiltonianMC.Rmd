@@ -1,0 +1,144 @@
+---
+title: "INFO510FA24-AB-4"
+author: "Aditya Bandimatt"
+date: "2024-11-27"
+output: html_document
+---
+
+### Hamiltonian Monte Carlo (gaussian)
+
+$$y_i \sim \mathcal{N}(\mu, \sigma^2)$$
+
+We assume that the observed data comes from a normal distribution
+Here we will estimate the parameters μ and σ given the data using HMC, as
+implemented in the packGE rstan.
+
+#### Setup and load libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("rstan",
+                 repos = "https://cloud.r-project.org/",
+                 dependencies = TRUE)
+library(rstan)
+library(ggplot2)
+install.packages("rstan")
+library(rstan)
+
+```
+
+```{r}
+set.seed(1234)
+
+# modeling the distribution of heights of individuals in a population
+
+# Generate synthetic data (heights in cm)
+N <- 150  # Number of individuals
+mu_true <- 170  # True mean (e.g., average height of population)
+sigma_true <- 10  # True standard deviation (e.g., variability in height)
+
+# Generating data from a normal distribution
+y <- rnorm(N, mu_true, sigma_true)
+
+# Plot the histogram of the observed data
+df <- data.frame(heights = y)
+ggplot(df, aes(x = heights)) +
+  geom_histogram(bins = 20, fill = 'blue', alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Histogram of Simulated Heights",
+       x = "Height (cm)", y = "Count")
+
+```
+
+We define a simple Bayesian model in Stan where we assume priors on the
+parameters μ and σ, and use the likelihood based on the observed data
+```{r}
+# Stan model code for estimating parameters of a Gaussian distribution
+stan_model <- "
+data {
+  int<lower=0> N;         // number of data points
+  vector[N] y;            // observed data (heights)
+}
+parameters {
+  real mu;                // mean of the Gaussian
+  real<lower=0> sigma;    // standard deviation of the Gaussian
+}
+model {
+  y ~ normal(mu, sigma);  // likelihood
+  mu ~ normal(0, 100);    // prior for mu (wide prior)
+  sigma ~ cauchy(0, 5);   // prior for sigma (weakly informative prior)
+}
+"
+```
+
+Running the HMC Sampler
+We compile the model in rstan and use HMC to sample from the posterior
+distribution of the parameters μ and  σ (This step takes long time to run)
+
+```{r}
+# Prepare the data for Stan
+stan_data <- list(N = N, y = y)
+
+# Compile and sample from the model
+fit <- stan(model_code = stan_model,
+            data = stan_data,
+            iter = 2000, chains = 4)
+
+# Print the results
+print(fit)
+
+```
+
+
+```{r}
+# Extract the samples
+samples <- extract(fit)
+
+# Posterior samples for mu and sigma
+mu_samples <- samples$mu
+sigma_samples <- samples$sigma
+
+# Plot posterior distribution of mu
+ggplot(data.frame(mu_samples), aes(x = mu_samples)) +
+  geom_histogram(bins = 30, fill = 'green', alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Posterior distribution of mu",
+       x = expression(mu), y = "Frequency") +
+  geom_vline(xintercept = mu_true, color = "red", linetype = "dashed",
+             linewidth = 1.5) +
+  annotate("text", x = mu_true + 2, y = 15, label = "True mu", color = "red")
+
+```
+
+```{r}
+# Plot posterior distribution of sigma
+ggplot(data.frame(sigma_samples), aes(x = sigma_samples)) +
+  geom_histogram(bins = 30, fill = 'blue', alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Posterior distribution of sigma",
+       x = expression(sigma), y = "Frequency") +
+  geom_vline(xintercept = sigma_true, color = "red",linetype = "dashed",
+             linewidth = 1.5) +
+  annotate("text", x = sigma_true + 1, y = 15, label = "True sigma",
+           color = "red")
+
+```
+
+####Traceplots and Diagnostics
+Traceplots can be used to assess the convergence of the HMC sampler.
+We expect the chains to mix well and converge to the target distribution
+
+```{r}
+# Traceplot
+traceplot(fit)
+```
+
+#### Model Diagnostics
+Compute the effective sample size (ESS) and R-hat diagnostics to ensure that the
+HMC sampling has converged properly.
+
+```{r}
+# Model diagnostics
+summary(fit)$summary[, c("n_eff", "Rhat")]
+
+```
+

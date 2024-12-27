@@ -1,0 +1,146 @@
+---
+title: "INFO510FA24-AB-3"
+author: "Aditya Bandimatt"
+date: "2024-11-27"
+output: html_document
+header-includes:  
+ - \usepackage[utf8]{inputenc}
+ - \usepackage{amsmath} 
+ - \usepackage{unicode-math}
+ - \setmathfont{XITS Math}
+---
+### Gibbs Sampling
+#### Setup and load libraries  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+```
+
+Generate some synthetic data from a normal distribution, which we will analyze
+using our Bayesian model.
+
+```{r}
+# Set seed for reproducibility
+set.seed(123)
+
+# Generate synthetic data from N(5, 2^2)
+n <- 100 # Number of observations
+true_mu <- 5
+true_sigma <- 2
+y <- rnorm(n, mean = true_mu, sd = true_sigma)
+
+# Plot the data
+ggplot(data.frame(y), aes(x = y)) +
+  geom_histogram(binwidth = 0.5, color = "black", fill = "lightblue") +
+  ggtitle("Histogram of the Observed Data") +
+  xlab("y") + ylab("Frequency")
+
+```
+
+### setting the priors
+$$\mu \sim N(\mu_0 = 0, \tau^2 = 10^2)$$
+$$\sigma^2 \sim IG(a = 2, b = 2)$$
+
+```{r}
+# Prior parameters
+mu_0 <- 0
+tau2 <- 10^2
+a <- 2
+b <- 2
+
+```
+
+## Gibbs Sampling
+#Sampling mu
+$$
+\mu \mid \sigma^2, y \sim N\left( \frac{\tau^{-2} \mu_0 + n \bar{y}}{\tau^{-2} + n}, \frac{1}{\tau^{-2} + n} \right)
+ $$
+#sampling sigma^2
+$$
+\sigma^2 \mid \mu, y \sim IG\left(a + \frac{n}{2}, b + \frac{1}{2} \sum_{i=1}^{n} (y_i - \mu)^2 \right)
+$$
+
+```{r}
+# Gibbs sampler function
+gibbs_sampler <- function(y, mu_0, tau2, a, b, n_iter = 10000) {
+  n <- length(y)
+  y_bar <- mean(y)
+  mu_samples <- numeric(n_iter)
+  sigma2_samples <- numeric(n_iter)
+
+  # Initialize parameters
+  mu <- mean(y)
+  sigma2 <- var(y)
+
+  for (iter in 1:n_iter) {
+    # Sample mu from its conditional posterior
+    mu_n <- (mu_0 / tau2 + n * y_bar / sigma2) / (1 / tau2 + n / sigma2)
+    sigma_mu_n <- sqrt(1 / (1 / tau2 + n / sigma2))
+    mu <- rnorm(1, mean = mu_n, sd = sigma_mu_n)
+
+    # Sample sigma^2 from its conditional posterior
+    shape <- a + n / 2
+    rate <- b + sum((y - mu)^2) / 2
+    sigma2 <- 1 / rgamma(1, shape = shape, rate = rate)
+
+    # Store samples
+    mu_samples[iter] <- mu
+    sigma2_samples[iter] <- sigma2
+  }
+
+  return(list(mu_samples = mu_samples, sigma2_samples = sigma2_samples))
+}
+
+```
+```{r}
+# Run Gibbs sampler
+n_iter <- 10000
+samples <- gibbs_sampler(y, mu_0, tau2, a, b, n_iter)
+
+
+# we have 10,000 samples from the posterior distributions of𝜇and σ
+
+#Let's visualize the posterior distributions and provide summary statistics
+
+# Posterior samples
+mu_samples <- samples$mu_samples
+sigma2_samples <- samples$sigma2_samples
+
+# Plot posterior distribution of mu
+ggplot(data.frame(mu_samples), aes(x = mu_samples)) +
+  geom_histogram(binwidth = 0.05, color = "black", fill = "lightblue") +
+  ggtitle("Posterior Distribution of Mu") +
+  xlab("Mu") + ylab("Frequency")
+
+```
+```{r}
+# Plot posterior distribution of sigma^2
+ggplot(data.frame(sigma2_samples), aes(x = sigma2_samples)) +
+  geom_histogram(binwidth = 0.1, color = "black", fill = "lightgreen") +
+  ggtitle("Posterior Distribution of Sigma^2") +
+  xlab("Sigma^2") + ylab("Frequency")
+
+```
+
+```{r}
+# Summary statistics
+mu_mean <- mean(mu_samples)
+mu_ci <- quantile(mu_samples, c(0.025, 0.975))
+sigma2_mean <- mean(sigma2_samples)
+sigma2_ci <- quantile(sigma2_samples, c(0.025, 0.975))
+
+mu_mean
+mu_ci
+sigma2_mean
+sigma2_ci
+
+```
+
+#### Explanation of Results
+- The **posterior distribution of mu** (the population mean) gives us an
+estimate of where the true mean lies, accounting for both the data and our
+prior beliefs. The 95% credible interval is an interpretation of uncertainty,
+meaning we're 95% confident that the true mean is within this range
+- The **posterior distribution of sigma^2** (the population variance) also
+shows uncertainty, helping us estimate the range of the variance in the
+population.
